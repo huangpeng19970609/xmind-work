@@ -89,6 +89,103 @@
 
 ### Suspense
 
+> 1. **异常捕获** 
+>
+>    - **子组件抛出 Promise** 作为“等待信号”。
+>
+>    - **协调器捕获并标记挂起状态**，切换为 `fallback` UI
+>
+>      Suspense组件，通过错误边界（Error Boundary）机制捕获这个对象， 将其设置为 “等待状态”，而非错误状态
+>
+> 2. Fiber标记
+>
+>    React 标记该子树为“挂起”（suspended）状态，并显示 `fallback` UI
+>
+>    当抛出的 Promise 完成（resolve）后，React 重新尝试渲染原始组件
+
+1. 首先，我们要明白的是，当子组件需要异步资源时，会**主动抛出一个特殊对象（通常是 Promise）**
+
+   比如 如 `React.lazy`
+
+   ```js
+   function readLazyComponentType(lazyComponent) {
+     const status = lazyComponent._status;
+     if (status === Resolved) return lazyComponent._result; // 成功返回组件
+     if (status === Rejected) throw lazyComponent._result; // 失败抛出错误
+     
+     // 首次渲染：抛出 Promise 触发 Suspense
+     const promise = lazyComponent._init();
+     throw promise; // ⭐ 关键！抛出 Promise
+   }
+   ```
+
+   ```
+   // ReactFiberBeginWork.js
+   function updateSuspenseComponent(
+     current: Fiber | null,
+     workInProgress: Fiber,
+     renderLanes: Lanes,
+   ) {
+     // ⭐ 创建新的 Suspense 上下文
+     const suspenseContext: SuspenseContext = {
+       visible: current !== null && current.memoizedState !== null,
+       hasFallback: true,
+       forceFallback: false,
+     };
+     
+     // ⭐ 将上下文推入当前渲染栈
+     pushSuspenseContext(workInProgress, suspenseContext);
+     
+     // ...继续渲染子组件
+   }
+   ```
+
+2. 在协调过程中，React 捕获抛出的 Promise：
+
+   ```js
+   jstry {
+     // 递归渲染组件树
+     workLoopSync();
+   } catch (thrownValue) {
+     // ⭐ 核心拦截入口
+     handleThrow(root, thrownValue);
+   }
+   ```
+
+   
+
+   ```js
+   // ReactFiberThrow.js
+   function throwException(root, fiber, value) {
+     if (value !== null && typeof value === 'object' && typeof value.then === 'function') {
+       // ⭐ 识别为 Promise，标记 Suspense
+       const wakeable = value;
+       markSuspended(fiber, wakeable); // 标记 Fiber 为挂起状态
+     }
+   }
+   ```
+
+3. 在render的beginWork中，  会执行 方法。
+
+   检查子组件是否挂起， 若是挂起状态 => 触发 mountFallbackChildren
+
+   否则正常渲染
+
+   
+
+4. 当 Promise 解决时，触发重新渲染：
+
+   ```js
+   // ReactFiberWorkLoop.js
+   function pingSuspendedWork(fiber, wakeable) {
+     // 标记 Fiber 需要重新渲染
+     markRetryLane(fiber);
+     
+     // 将渲染任务重新加入调度队列
+     scheduleWorkOnFiber(fiber, fiber.lanes);
+   }
+   ```
+
 ### 架构演进
 
 ### 流程

@@ -1,4 +1,4 @@
-> 卡颂的文章固然写的很好 但我觉得始终在很多地方是很难串起来的，故有了这篇。
+> ho卡颂的文章固然写的很好 但我觉得始终在很多地方是很难串起来的，故有了这篇。
 >
 > 我认为 卡颂 的文章或许可以作为一个抽象的字典去参考、去理解，里面相当的抽象概念，是文字方面无法覆盖到，或许读者无法理解的，故我们自身应该有足够的疑惑与较真，去提出疑问，得到答案，最终理解作者的想法与思路。
 >
@@ -31,13 +31,15 @@
    - 同步模式：立即执行 => performSyncWorkOnRoot
    - 并发模式：会通过 Scheduler 进行任务调度 => performConcurrentWorkOnRoot
 
-5. beginWork → 构建 workInProgress Fiber 树
+5. reconcile -> beginWork → 构建 workInProgress Fiber 树
+
+   > reconcile:  vdom 转 fiber
 
    - 深度优先遍历构建 workInProgress 树
    - 对比新旧 Fiber（Diff 算法），打上 effectTag（插入/更新/删除）
    - 处理生命周期（如过时的 `componentWillMount`）
 
-6. completeWork → 收集 effect list
+6. reconcile  -> completeWork → 收集 effect list
 
    - 创建 DOM 节点（对 HostComponent）
    - 收集副作用到 **effectList**（链表结构，记录需要变更的节点）
@@ -61,6 +63,8 @@
    > - 高优先级更新可中断低优先级渲染
 
    - 使用链表就是为了抛弃原本的递归，让其可以暂停。
+
+   以前的vdom结构，
 
 2. 双缓冲机制
 
@@ -188,7 +192,178 @@
 
 ### 架构演进
 
-### 流程
+1. react0至15
+
+   - 一直都有vdom 与 diff算法
+
+   - 也一直都有**Reconciliation** 
+
+     不过这是 **同步协调**， **不可中断地**
+
+   - 缺点
+
+     1. 主线程的堵塞
+     2. **无法中断**（用户的交互无法响应）
+     3. 粒度还是不够细致
+
+2. react16
+
+   - **Fiber Reconciler**
+
+     （详情请看问题【为什么要Fiber】）
+
+3. React16.8
+
+   - Hooks
+
+4. React 18.x
+
+   - 并发渲染(**Concurrent Mode**)
+     1. 通过 `ReactDOM.createRoot` 创建根节点来启用并发渲染能力
+     2. **可中断渲染**
+     3. **时间切片 (Time Slicing)**
+
+
+
+### useState 与 useEffect的理解
+
+```tsx
+const App = () => {
+    const [ num, setNum ] = useState(111);
+    
+    const ref = useRef(1);
+    
+    useEffect(() => {
+        # 333
+    })
+    
+    return <div></div>
+}
+```
+
+> 当我们开始进行debugger的操作，
+
+1. 当前的fiber节点，可以找到对应的 useState、useRef、useEffect？
+
+   即 fiber.memoziedState 
+
+   - memoziedState里的数据 通过 next进行连接。
+
+     根据 不同的类型存储不同的数据 （）
+
+     ````js
+     # useState这个hook
+     memoziedState: 111
+     baseState: 111
+     next: useRef对应的hook
+     
+     #useRef
+     baseState: null
+     memoziedState: { current:　１ }
+     
+     #useEffect
+     tag: 9,
+     memoziedState: effect
+     ````
+
+2. 何时构建了useRef?
+
+   内部的useRef实现
+
+   ````js
+   useRef: function( initialValue ) {
+       currentHookNameInDev: 'useRef',
+       
+       mountHookTypesDev();
+       
+       return mountRef(initialValue);
+   }
+   ````
+
+   触发对应ref方法
+
+   ````js
+   # 若是挂载
+   function mountRef(initialValue) {
+       
+       var hook = mountWorkInProgressHook();
+       
+       const ref2 = {
+           current: initialValue
+       }
+       
+       hook.memoizedState = ref2
+       
+       return ref2
+       
+   }
+   
+   # 若是update （第二次调用）
+   function updateRef() {
+        var hook = updateWorkInProgressHook();
+       
+        return hook.memoizedState;
+   }
+   ````
+
+   继续 构建hook方法
+
+   ```js
+   function mountWorkInProgressHook() {
+       
+       var hook = {
+           memoziedState: null,
+           baseState: null,
+           baseQueue: null,
+           queue: null,
+           next: null,
+       }
+       
+       if ( workInprogressWork === null ) {
+           currentLyRenderingFiber$1.memoziedState = workInProgressHook = hook
+       }
+       // 
+       else {
+           workInProgressHook = workInProgressHook.next = hook
+       }
+   }
+   ```
+
+3. 注意：
+
+   - 第二次调用useRef的时刻，出发useRef，便是处罚updateRef， 此时会尝试复用hook，并且直接返回hook.memorizedState的值。故， useRef返回的值，永远都是我们初始化的那个。
+
+   
+
+4. 
+
+
+
+### useMemo
+
+https://zhuanlan.zhihu.com/p/608959809
+
+对于 useMemo， 它是当依赖不变的时候始终返回之前创建的对象，当依赖变了才重新创建
+
+- 即 deps变化的时候， 重新创建，
+
+- 故一般是用在 props 上，因为组件只要 props 变了就会重新渲染，用 useMemo 可以避免没必要的 props 变化。达到性能优化的作用
+
+1. mountMemo 
+
+   
+
+   ````jsx
+   function mountMemo() {
+       
+   }
+   ````
+
+   
+
+2. updateMemo 
+
+
 
 ### Scheduler
 

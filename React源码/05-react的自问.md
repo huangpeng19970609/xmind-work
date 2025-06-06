@@ -227,19 +227,13 @@
 
 ### useState 与 useEffect的理解
 
-```tsx
-const App = () => {
-    const [ num, setNum ] = useState(111);
-    
-    const ref = useRef(1);
-    
-    useEffect(() => {
-        # 333
-    })
-    
-    return <div></div>
-}
-```
+> **hook 的数据是存放在 fiber 的 memoizedState 属性的链表上的，每个 hook 对应一个节点，第一次执行 useXxx 的 hook 会走 mountXxx 的逻辑来创建 hook 链表，之后会走 updateXxx 的逻辑**
+
+
+
+#### 前言
+
+
 
 > 当我们开始进行debugger的操作，
 
@@ -333,11 +327,65 @@ const App = () => {
 
    - 第二次调用useRef的时刻，出发useRef，便是处罚updateRef， 此时会尝试复用hook，并且直接返回hook.memorizedState的值。故， useRef返回的值，永远都是我们初始化的那个。
 
-   
+4. 关于useCallback、useMemo 的实现
 
-4. 
+   也是类似如此，
+
+   - useMemo  也分为了 mountMemo 与 updateMemo 两个阶段
+
+     mountMemo 时， 
+
+     ```jsx
+     hook.memoizedState = [ nextValue, nextDeps ]
+     ```
+
+     而updateMemo时
+
+     会判断依赖有没有变化，若是变化更新，否则直接返回
+
+5. 
+
+#### useEffect
+
+他们如果按照划分也是分为两个阶段不同的划分 
+
+- mountEffect
+  1. mountEffect 会 触发一个pushEffect方法
+- updateEffect
+  1. updateEffect也会 触发一个pushEffect方法
 
 
+
+1. pushEffect
+   - 里面创建了 effect 对象并把它放到了 fiber.updateQueue 上
+2. commit 最开始的时候，异步处理的 effect 列表 （fiber.updateQueue）
+   - 注意，是在commit之前的阶段开始执行 （异步执行不阻塞渲染）
+   - 遍历完一遍 fiber 树，处理完每个 fiber.updateQueue 就处理完了所有的 useEffect 的回调
+   - useLayoutEffect 会导致同步的堵塞，这是因为他在commit的阶段执行调用方法。
+
+
+
+#### useState 
+
+同样的分为两个阶段
+
+- mountState 
+
+  1. 同样的，将初始的数据  initailState 到 fiber.memoized
+
+  2. 同样的， 创建queue，hook.queue 现在出现了。
+
+     并返回dispatch， 这个dispatch函数绑定了 当前的fiber 与 queue，目的是提供用户来触发。
+
+     即 setXXX， 即 dispatch
+
+- updateState 
+
+  1. 调用updateReducer
+
+     自然也是根据优先级，这里会根据 lane 来比较，然后做 state 的合并，最后返回一个新的 state
+
+  2. 
 
 ### useMemo
 
@@ -351,14 +399,12 @@ https://zhuanlan.zhihu.com/p/608959809
 
 1. mountMemo 
 
-   
-
    ````jsx
-   function mountMemo() {
+function mountMemo() {
        
    }
    ````
-
+   
    
 
 2. updateMemo 
@@ -374,6 +420,41 @@ https://zhuanlan.zhihu.com/p/608959809
 ### 对 useReducer 的理解
 
 ### setState 是同步还是异步？
+
+> 总的来说，react认为你这些任务并不是react管控内的任务了，
+>
+> 故不再按照react的调度遵循，而是尊重你的选择，关闭react的调度规则。
+
+1. 在 React 的**合成事件**与**生命周期方法**是异步的
+   - 处理策略为 batching 模式， 会进行合并处理，只会渲染一次。
+   - 直接访问state是不能获取到最新的值的。
+2. 在 **`setTimeout`、`setInterval`、原生 DOM 事件** 或 **`Promise` 回调** 中，`setState` 会同步执行。（脱离 React 调度控制）
+3. **异步执行**：默认通过 `MessageChannel` 或 `setImmediate` 实现微任务调度
+
+#### 01 react18+的优化
+
+1. `ReactDOM.createRoot` 启用并发模式后，**所有更新默认批处理**
+   - 使用 `flushSync` 强制同步更新
+
+#### 02 批处理 与 **同步行为触发条件**
+
+1. 但源码的内部，
+
+   开头：会对于 生命周期方法 与 合成事件，进行批处理的标记。
+
+   过程：所有 `setState` 调用会被收集到更新队列中而不立即执行。
+
+   结束：事件回调结束后，React 一次性处理所有更新
+
+   即 fiber.updateQueue
+
+2. 若是 【**原生事件**】、【**异步代码**】
+
+   React 会**同步刷新更新队列**
+
+3. react18的优化
+
+   提供了这个设置可以强制【`flushSync` 】
 
 ### PureComponent 和 Component的区别是
 
@@ -642,3 +723,49 @@ function MyComponent() {
 
    
 
+### useTransition
+
+```tsx
+const [ isPendging, startTransition ] = useTransition();
+```
+
+
+
+- 介绍一个卡顿情况
+
+  首先单纯的使用 input的onchange方法来触发对应的 setState操作，进行大量的dom插入
+
+  1. setState本质上是触发了 dispatchSetState这个方法。
+
+     ⭐ 入口处存在，
+
+     ````js
+     # 获取一个31位的二进制掩码
+     lane = requestUpdateLane(fiber);
+     ````
+
+     其中，我们这个用户操作的优先级是最高的，这是一个同步的优先级。并且是无法被中断的。
+
+     故这类操作必然会堵塞主线程。
+
+  2. performance存在一个长的longTask无法被中断
+
+- 在使用useTransition不卡顿了
+
+  1. longTask消失了， 被分割多了task任务。
+
+  2. 触发startTransition时，
+
+     - 触发 setCurrentUpdateProprity 暂时性的拔高当前的优先级。这让setPendging及时的立刻执行，
+     - ⭐ 他会修改 【ReactCurrentLane】，将lane修改为transitionLane，从而不是那么高的优先级了，故可以开启并发模式。
+     - 注此处有 preRansition 防止用户在useTransition再度使用 useTransition
+
+  3. 当requestUpdateLane时，
+
+     ReactCurrentLane变量的判断的修正（我们已经在先前的操作修改了当前的lane了）
+
+  4. 故现在，当进行workSync时，shouldYield的判断可以进入并发模式的判断中了。
+
+     会处理构建当前fiber节点后，判断是否超时，若是超时，则暂停，则调用Scheduler调度下一次的执行，保证不卡顿。
+
+     这也就是为什么 会出现一系列task的原因。

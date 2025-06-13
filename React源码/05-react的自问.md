@@ -223,7 +223,86 @@
      2. **可中断渲染**
      3. **时间切片 (Time Slicing)**
 
+### useRef和useState底层区别
 
+> 都是基于hook链表来实现。
+>
+> 但在 【数据存储】、【更新机制】、【触发渲染】上的行为有着区别。
+
+#### 01 存储上
+
+```typescript
+type Hook = {
+  memoizedState: any,      // 存储当前状态
+  baseQueue: Update<any> | null,
+  baseState: any,
+  queue: UpdateQueue<any> | null,
+  next: Hook | null,       // 指向下一个 Hook
+};
+```
+
+1. useState
+
+   - ` memoizedState` 存储 **状态值**（如 `count`）
+   - 他会维护 queue 作为 更新队列
+
+   故初始化的时候，他会额外的 创建 dispatch， 并返回
+
+   ```js
+   return [hook.memoizedState, dispatch];
+   ```
+
+2. **`useRef`**
+
+   - 【memoizedState】 里他直接存储的是 目标的引用对象。
+   - **无更新队列**（修改 `current` 不触发重渲染）。
+
+   故初始化的时候，直接返回 这个ref
+
+   ```js
+   function mountRef(initialValue) {
+     const hook = mountWorkInProgressHook();
+     const ref = { current: initialValue };
+     hook.memoizedState = ref;
+     return ref;
+   }
+   ```
+
+#### 02 **更新机制**
+
+1. useState
+
+   - 当调用目标 setState时， 创建更新对象（`update`）加入队列
+   - 标记fiber， 即 scheduleUpdateOnFiber
+   -  更新 `hook.memoizedState` 并触发组件渲染
+
+   ```js
+   function dispatchAction(queue, action) {
+     const update = { action, next: null }; // 创建更新
+     enqueueUpdate(queue, update);          // 加入队列
+     scheduleUpdateOnFiber();               // 调度渲染
+   }
+   ```
+
+2. useRef
+
+   - 直接修改 `ref.current = newValue`（**同步操作**）
+   - **无队列**、**无调度**、**不触发渲染**
+
+
+
+### 03 渲染的差异性
+
+- **`useState`**
+  在 `renderWithHooks` 阶段，React 会：
+  1. 遍历 Hooks 链表，执行状态更新计算。
+  2. 更新 `memoizedState` 为最新值。
+  3. **触发组件重新渲染**。
+- **`useRef`**
+  在渲染过程中：
+  1. 直接返回 `hook.memoizedState`（即同一个 ref 对象）。
+  2. **不参与渲染计算**，修改 `current` 不影响输出。
+  3. 组件 **不会因 ref 变化而重渲染**。
 
 ### useState 与 useEffect的理解
 

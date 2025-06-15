@@ -291,7 +291,7 @@ type Hook = {
 
 
 
-### 03 渲染的差异性
+#### 03 渲染的差异性
 
 - **`useState`**
   在 `renderWithHooks` 阶段，React 会：
@@ -310,9 +310,7 @@ type Hook = {
 
 
 
-#### 前言
-
-
+#### 01 前言
 
 > 当我们开始进行debugger的操作，
 
@@ -424,7 +422,7 @@ type Hook = {
 
 5. 
 
-#### useEffect
+#### 02 useEffect
 
 他们如果按照划分也是分为两个阶段不同的划分 
 
@@ -444,7 +442,7 @@ type Hook = {
 
 
 
-#### useState 
+#### 03 useState 
 
 同样的分为两个阶段
 
@@ -490,7 +488,19 @@ function mountMemo() {
 
 
 
-### Scheduler
+### Scheduler（React的调度）
+
+1. 时间分片
+
+2. lane系统
+
+   - 用户交互 → 高优先级
+   - 数据加载 → 普通优先级
+   - 后台任务 → 低优先级
+
+3. **并发渲染**
+
+   可中断、可恢复
 
 ### 对 React Hook 的闭包陷阱的理解？
 
@@ -535,11 +545,16 @@ function mountMemo() {
 
    提供了这个设置可以强制【`flushSync` 】
 
-### PureComponent 和 Component的区别是
+### PureComponent 
 
-### React render 方法原理？在什么时候触发？
+### React render 方法原理
 
-### useEffect VS useLayoutEffect
+### useEffect 与useLayoutEffect
+
+1. **useLayoutEffect**
+   - 属于React提交阶段的同步操作
+2. **useEffect**
+   - 通过调度器（Scheduler）放入微任务队列
 
 ### Fiber 结构和普通 VNode 有什么区别？
 
@@ -848,3 +863,100 @@ const [ isPendging, startTransition ] = useTransition();
      会处理构建当前fiber节点后，判断是否超时，若是超时，则暂停，则调用Scheduler调度下一次的执行，保证不卡顿。
 
      这也就是为什么 会出现一系列task的原因。
+
+### react18以前批处理是啥样的？ react18+的批处理怎么做的，从底层讲讲
+
+#### react18之前
+
+- 触发批处理的场景
+
+  1. 应用范围：react的合成事件中的setState机制
+  2. 触发条件：并且在同一个事件中，执行多了多次setState便触发。、
+
+- 原理
+
+  1. 一个我们称呼为事务的机制包裹。 transaction
+
+  2. 回调时，将所有更新会放入dirtyComponent
+
+  3. 回调结束后，同步处理队列并渲染。
+
+  4. 源码的标志位
+
+     ```js
+     isBatchingUpdates  这个变量名称
+     ```
+
+#### react18+
+
+- 场景
+
+  覆盖了所有场景：事件处理、定时器与原生事件， Promise
+
+  1. 条件：
+
+     只要是在同一个任务单元触发了多次的更新都会
+
+- 原理
+
+  1. 更新会自动走入 updateQueue
+
+     ```js
+      enqueueUpdate(fiber, queue, update); // 入队
+       scheduleUpdateOnFiber(fiber); // 调度更新
+     ```
+
+  2. 利用 `queueMicrotask` 延迟处理
+
+     ```js
+     function scheduleUpdateOnFiber(root, fiber, lane) {
+       markRootUpdated(root, lane); // 标记待处理更新
+       ensureRootIsScheduled(root); // 统一调度
+     }
+     
+     ```
+
+  3. 基于 `Lane` 模型的优先级合并
+
+     ````js
+     export const SyncLane = 0b0001; // 同步优先级
+     export const InputContinuousLane = 0b0010; // 连续输入（如滚动）
+     export const DefaultLane = 0b0100; // 默认优先级
+     
+     ````
+
+- 其他
+
+  你可以使用【flushSync】来强制更新。
+
+- 拓展，本质上是因为
+
+  1. **调度器**
+
+     React 18 使用 **Lane Model**
+
+     所有 `setState` 调用会被封装为 **更新对象（Update）**，并加入到当前任务的更新队列中
+
+  2.  **Fiber 架构**
+
+     Fiber 架构将渲染过程拆分为小单元（Fiber Nodes），允许 React 在更新过程中暂停、恢复或中断渲染。
+
+     **双缓冲机制**：React 使用 **双缓冲树（Current Tree & Work-In-Progress Tree）** 管理渲染状态，确保更新过程高效且可控。
+
+  3. 延迟更新（统一调度）
+
+     在异步回调中调用 `setState` 时，将更新操作延迟到微任务队列的末尾统一处理。
+
+  4. 或许你可以聊一下总体的的Fiber流程的规则。
+
+### **react可执行中断渲染从底层怎么做到的**
+
+1. **时间切片**
+
+   eact 将渲染任务拆分为多个 **Fiber 工作单元**，通过浏览器 API（如 **`requestIdleCallback`** 或 **`MessageChannel`**）在空闲时段执行
+
+2. **双缓存技术**
+
+   **中断时**：保存当前处理的 Fiber 节点指针（**`workInProgress`**） 
+
+   恢复时**：从上次中断的 Fiber 节点继续处理

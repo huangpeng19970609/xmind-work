@@ -138,7 +138,7 @@
 
   1. 条件：
 
-     只要是在同一个任务单元触发了多次的更新都会
+     只要是在同一个任务单元触发了多次的更新都会。
 
 - 原理
 
@@ -151,46 +151,14 @@
 
   2. 利用 `queueMicrotask` 延迟处理
 
-     ```js
-     function scheduleUpdateOnFiber(root, fiber, lane) {
-       markRootUpdated(root, lane); // 标记待处理更新
-       ensureRootIsScheduled(root); // 统一调度
-     }
-     
-     ```
-
   3. 基于 `Lane` 模型的优先级合并
-
+  
      ````js
      export const SyncLane = 0b0001; // 同步优先级
      export const InputContinuousLane = 0b0010; // 连续输入（如滚动）
      export const DefaultLane = 0b0100; // 默认优先级
-     
      ````
 
-- 其他
-
-  你可以使用【flushSync】来强制更新。
-
-- 拓展，本质上是因为
-
-  1. **调度器**
-
-     React 18 使用 **Lane Model**
-
-     所有 `setState` 调用会被封装为 **更新对象（Update）**，并加入到当前任务的更新队列中
-
-  2. **Fiber 架构**
-
-     Fiber 架构将渲染过程拆分为小单元（Fiber Nodes），允许 React 在更新过程中暂停、恢复或中断渲染。
-
-     **双缓冲机制**：React 使用 **双缓冲树（Current Tree & Work-In-Progress Tree）** 管理渲染状态，确保更新过程高效且可控。
-
-  3. 延迟更新（统一调度）
-
-     在异步回调中调用 `setState` 时，将更新操作延迟到微任务队列的末尾统一处理。
-
-  4. 或许你可以聊一下总体的的Fiber流程的规则。
 
 ## 一 Fiber
 
@@ -255,11 +223,11 @@
 
 
 
-### 1 说下`hooks`的状态
+### 03 说下`hooks`的状态
 
 
 
-#### 01 状态机制
+#### 01 举一个useState的例子
 
 1. 每一个组件实例都对应着一个Fiber， Fiber存在 memoizedState 存储hook， 以单向链表形态存储。
 
@@ -273,12 +241,18 @@
    - `setCount` 触发
    - 的更新会存入 Hook 节点的 `queue` 队列。
    - 重渲染时，React 按顺序找到对应 Hook 节点，应用更新后的状态。
+   
+   
 
 #### 02 hook的执行上下文
 
 1. React 在渲染时设置全局变量 `currentlyRenderingFiber`
+
 2. Hook 状态存储在 Fiber 节点
-3. 当触发更新时，dispatch 函数通过闭包保留对 Fiber 的引用
+
+3. 当触发更新时，dispatch 函数通过闭包保留对 Fiber 的引用、
+
+   
 
 #### 03  **不同类型 Hook 的 `memoizedState` 存储**
 
@@ -385,7 +359,7 @@ type Hook = {
 
 2.  **异步批处理**
 
-   - useState： React 18+ 默认自动批处理【useState】所有更新。
+   - useState： React 17+ 默认自动批处理【useState】所有更新。
 
      可以 使用 -  使用 `flushSync` 强制同步
 
@@ -407,6 +381,8 @@ type Hook = {
      
 
    一个是 dispatchAction ， 另一个是 Component.prototype.setState
+   
+   
 
 类组件的 `setState` 和函数组件的 `useState` 最终都整合到 **Fiber 更新系统**中。
 
@@ -1059,7 +1035,7 @@ const [ isPendging, startTransition ] = useTransition();
 
    如果有，则将自己添加到全局的副作用链表中。
 
-3. 更新subtreeFlags
+3. 根据 effectTag 来 更新subtreeFlags
 
    即 标记子树是否存在更新内容，这样等下次更新的时候，就直接跳过就好了。
 
@@ -1099,7 +1075,7 @@ const [ isPendging, startTransition ] = useTransition();
 1. beforeMutation
 
    - 销毁ref， 销毁对应的foucus、blur逻辑
-   - 调度useEffect
+   - （⭐）调度useEffect 
      - 标记： PASSIVE
      - 收集
      - 安排

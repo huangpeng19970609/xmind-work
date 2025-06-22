@@ -394,78 +394,127 @@ type Hook = {
 
 
 
-#### 01 useEffect
+#### 01 useEffec
 
-```js
-useEffect(() => {
-  console.log(count);
-}, [count]); // 初始化语句
-```
-
-1. 创建 effect 对象并加入队列
-
-   ```js
-   hook.memoizedState = pushEffect(
-       HookHasEffect | hookFlags, // 包含 HasEffect 标记
-       create,                    // 用户传入的函数
-       undefined,                 // 销毁函数（初始为空）
-       nextDeps                   // 依赖数组
-     );
-   ```
-
-2.  ** Commit的beforeMutation阶段 **
-
-   调度useEffect，空闲处理
-
-3. 异步处理
+1. 存储
+   - Fiber 节点的 `updateQueue` 属性存储 Effect 链表
+2. 更新
+   1. 在 `commitBeforeMutationEffects` 中调度异步 Effect
+   2. 使用 `Scheduler` 模块安排副作用执行
+3. 渲染
+   - commitPassiveEffects
 
 #### 02 useState 
 
-```js
-const [count, setCount] = useState(0); // 初始化语句
-```
+1. 存储
 
-1. 初始化
+   - Fiber.memoizedState,  每个useState对应一个Hook对象
 
-   1. mountWorkInProgressHook （ 创建hook对象 ）
-   2. 返回 [hook.memoizedState, dispatch]
+2. 更新
 
-2. `setCount` 时
+   - 调用的是setState，触发的时候 dispatchAction
+   - dispatchAction创建更新对象并入队（`enqueueUpdate`）
+   - 标记 Fiber 节点需要更新（`scheduleUpdateOnFiber`）
+   - **批处理优化**
 
-   1. dispatchSetState，触发更新
-      - lane。
-      - 创建update， 将 update加入当前的fiber的queue
-      - 调度update队列
+3. 渲染
 
-3. ** Render的 completeWork阶段 **
+   获得最新计算的状态值
 
-   遍历当前的hook的queue时，即effectList以计算fiber.memoziState.memoizedState新状态
 
-4. Layout 时layout时
 
-   执行 useLayoutEffect 销毁和创建函数。
+#### 03 `dispatchAction` 更新
 
-   
+1. Hook 上存储 baseQueue 与 queue,  baseState 与 memoizedState 
+
+2. 其中 baseQueue代表的是未处理的更新。 在优先级不足的时候考虑恢复。
+
+3. 其中，baseState是为了增量更新的比较。 
+
+4. **Fiber.updateQueue** 存储的是 useEffect 更新队列。
+
+   而 hook.queue存储的是 useState的更新队列。
+
+5. 他位于 beginWork 开始 (  beginWork的目的就是为了构建Fibr )
+
+   - renderWithHooks
+
+   - updateFunctionComponent -> 触发 uodateReducer
+
+     - 获取待处理更新
+     - 并更新队列
+     - 计算最新状态 （通过不同的reducer的计算来获取最新的不同的）
+     - 存储最新的状态 - memoizedState与baseState， 然后清空baseQueue
+
+     
+
+     
 
 ### 4 React.memo() 和 useMemo() 之间的主要区别：
 
-### useEffect 与useLayoutEffect
+1. React.memo 其是HOC，本质上是高阶组件。 useMemo本质上是一个hook。
 
-1. **useLayoutEffect**
-   - 属于React提交阶段的同步操作
-2. **useEffect**
-   - 通过调度器（Scheduler）放入微任务队列
+   他们面向目标不同。
 
-### Fiber 结构和普通 VNode 有什么区别？
+2. 关于比较
+
+   - React.memo 基于 props进行浅比较
+   - useMeom基于 依赖数组浅比较。
+
+3. 执行时机
+
+   - react.memo也是在beginWork的执行。
+
+     beginWork (组件函数内)
+
+   - useMemo作为hook，是在beginWork的时候执行。
+
+     （注意: useEffect构成的effectList链存储于 Fiber.updateQueue是在Mutation执行的，因为其的 effect 不可控，可能会消耗大量的js）
+
+4. `memo` 阻止组件渲染 → `useMemo` 阻止内部计算。
 
 
+
+
+
+### 5 useEffect 与useLayoutEffect
+
+> effectTag的标记是不同的，一个是useLayoutEffect ， 另一个是 useEffect
+
+- useLayoutEffect
+
+  1. 执行函数
+
+     commitLayoutEffects
+
+  2. 创建时
+
+     一个是PassiveEffect
+
+  3. 更新时
+
+     useEffect是异步调度的
+
+- useEffect
+
+  1. 执行函数
+
+     commitPassiveEffects （注意这个Passive） -> flushPassiveEffects
+
+  2. 创建时
+
+     他是UpdateEffect。
+
+  3. 更新
+
+     立即触发。
 
 
 
 ## 一 概念名词知识的解释
 
 
-### Suspense
+### 01 Suspense
 
 > 1. **异常捕获** 
 >
@@ -481,7 +530,9 @@ const [count, setCount] = useState(0); // 初始化语句
 >
 >    当抛出的 Promise 完成（resolve）后，React 重新尝试渲染原始组件
 
-1. 首先，我们要明白的是，当子组件需要异步资源时，会**主动抛出一个特殊对象（通常是 Promise）**
+1. 首先，我们要明白的是，
+
+   当子组件需要异步资源时，会**主动抛出一个特殊对象（通常是 Promise）**
 
    比如 如 `React.lazy`
 
@@ -499,13 +550,13 @@ const [count, setCount] = useState(0); // 初始化语句
 
 2. 在协调过程中，React 捕获抛出的 Promise
 
-3. 在render的beginWork中，  会执行 方法。
+3. 在render的beginWork（处理函数组件 构建fiber十时刻）中，  会执行 方法
 
    检查子组件是否挂起， 若是挂起状态 => 触发 mountFallbackChildren
 
    否则正常渲染
 
-4. 当 Promise 解决时，触发重新渲染：
+4. 当 Promise 解决时，触发重新渲染 （ 标记其为非挂载状态 ）
 
    ```js
    // ReactFiberWorkLoop.js
@@ -518,55 +569,50 @@ const [count, setCount] = useState(0); // 初始化语句
    }
    ```
 
-- 1. 
 
-  2. 
 
-### useMemo
+### 02 React Hook 的闭包陷阱
 
-https://zhuanlan.zhihu.com/p/608959809
+1. 问题的本质
 
-对于 useMemo， 它是当依赖不变的时候始终返回之前创建的对象，当依赖变了才重新创建
+   在函数组件中，**每次渲染都是一次独立的函数调用**，会创建新的作用域。Hook 回调函数捕获的是声明时的状态值，形成"时间胶囊"
 
-- 即 deps变化的时候， 重新创建，
+2. 比如 在useEffect当中
 
-- 故一般是用在 props 上，因为组件只要 props 变了就会重新渲染，用 useMemo 可以避免没必要的 props 变化。达到性能优化的作用
+   1. 事件的监听
+   2. 异步操作任务
 
-1. mountMemo 
+3. 解决办法
 
-   ````jsx
-function mountMemo() {
-       
-   }
-   ````
-   
-   
-
-2. updateMemo 
+   - 跳出去调度机制，采取 useRef
+   - 严格模式下的双重渲染  => 目的便是 故意双重调用组件函数，提前暴露闭包问题
+   - React的提案：React 在调用前动态注入最新值
 
 
 
-### Scheduler（React的调度）
+### 03 useReducer
 
-1. 时间分片
+useState` 本质是预定义 reducer 的 `useReducer
 
-2. lane系统
+1. 定义
 
-   - 用户交互 → 高优先级
-   - 数据加载 → 普通优先级
-   - 后台任务 → 低优先级
+   ```jsx
+   const [state, dispatch] = useReducer(reducer, initialState, initFn);
+   ```
 
-3. **并发渲染**
+   - reducer 纯函数 
 
-   可中断、可恢复
+2. 可以这么理解
 
-### 对 React Hook 的闭包陷阱的理解？
+   useReducer就是多个 dispatch ，
 
-### 
+3. 状态机设计模式
 
-### 对 useReducer 的理解
+   适合复杂业务逻辑处理。
 
-### setState 是同步还是异步？
+
+
+### 04 setState 是同步还是异步？
 
 > 总的来说，react认为你这些任务并不是react管控内的任务了，
 >
@@ -603,21 +649,23 @@ function mountMemo() {
 
    提供了这个设置可以强制【`flushSync` 】
 
-### PureComponent 
+### 04 PureComponent 
 
-### React render 方法原理
+1. 类似于 React.memo
 
-### 
+   不过比较对象 为 props + state
 
-### 简述 React batchUpdate 机制
+2. React.memo是支持自定义比较的
 
-### 简述 React 事务机制
+3. 他是类组件的优化
 
-### 如何理解 React concurrency 并发机制
 
-### 简述 React reconciliation 协调的过程
 
-### React 组件渲染和更新的全过程
+
+
+### 06 React concurrency 并发机制
+
+
 
 ### 为何 React Hooks 不能放在条件或循环之内？
 
@@ -934,68 +982,125 @@ const [ isPendging, startTransition ] = useTransition();
 
 
 
-###  事件优先级，更新优先级，任务优先级，调度优先级
 
 
+## * React的调度
 
-1. 事件优先级 → 更新优先级 （  Lane ）
+###  1 事件 -> 更新优先级 -> 任务优先级 ->调度
 
-   - 更新Lane
+1. 事件 → 更新优先级 
 
-2. 更新优先级（Lane） → 任务优先级
+   - 事件
+
+     1. 离散事件 最高级， 例如 用户的鼠标类、键盘事件 -> lane
+     2. 连续事件， 例如 滚动事件， 鼠标移动事件 -> lane
+     3. 其他的默认事件 -> lane
+
+   - 事件映射为lane
+
+     
+
+2. 更新优先级（ Update 对象的Lane） → 任务优先级
 
    - 在同一个根节点（root）上可能同时存在多个更新（每个更新有自己的lane）
 
-   - React会收集所有待处理的更新，并计算下一个要处理的lane
+     比如 fiber.updateQueue
+
+   - React会收集所有待处理的更新，并计算下一个要处理的 lane
+
    - React 收集所有待处理更新，选择最高优先级作为任务优先级。
+
    - 多个更新可能会被批量处理到同一个任务中，但任务的整体优先级由这些更新中的最高优先级决定
 
-3. 任务优先级 → 调度优先级
+3. 任务优先级 → 调度
 
-   - 实现时间切片（time slicing）和任务中断（yielding）
-     1.  检查是否超过当前帧的时间预算（默认5ms）
-     2. 浏览器API：检查是否有等待的输入事件
-     3. 检查是否在主线程阻塞太久
+   - 调度的优先级即是调度的策略，其本身不存在优先级别的概念。
 
-   
+     调度优先 会基于  Task 属性上的 【priorityLevel】这个属性。
 
 
 
+### 2 Scheduler（React的调度）
+
+1. 数据结构
+
+   ```js
+   // 任务队列数据结构
+   type Task = {
+     id: number,             // 唯一标识
+     callback: Function,     // 任务函数
+     priorityLevel: number,  // 优先级
+     startTime: number,      // 开始时间
+     expirationTime: number, // 过期时间
+     next: Task | null,      // 链表指针
+   };
+   ```
+
+2. 优先级 （6个调度优先级）
+
+   ```js
+   export const NoPriority = 0;           // 无优先级
+   export const ImmediatePriority = 1;    // 同步优先级 (99ms)
+   export const UserBlockingPriority = 2; // 用户交互 (249ms)
+   export const NormalPriority = 3;       // 默认 (4999ms)
+   export const LowPriority = 4;          // 低优先级 (10000ms)
+   export const IdlePriority = 5;         // 空闲 (1073741823ms)
+   ```
+
+3. 遵循的调度策略
+
+   - **优先级插队机制**
+
+     优先级的高的，会被排到靠前的位置上。
+
+   - **饥饿任务处理**
+
+     如果timer.expirationTime <= currentTime。 则直接将其优先级最高。
+
+   - **任务中断恢复**
+
+     被中断任务下次继续执行。
+
+     - 任务对象保留该函数引用：`currentTask.callback = doChunk`
 
 
-#### 事件优先级
 
-1. 离散事件 最高级， 例如 用户的鼠标类、键盘事件
-2. 连续事件， 例如 滚动事件， 鼠标移动事件
-3. 其他的默认事件
+### 3 Task
 
-#### 更新优先级
+```jsx
+type Task = {
+  id: number,             // 唯一标识
+  callback: Function,     // 任务函数
+  priorityLevel: number,  // 优先级
+  startTime: number,      // 开始时间
+  expirationTime: number, // 过期时间
+  next: Task | null,      // 链表指针
+};
+```
 
-1. 使用 **Lane 模型**（位掩码）表示优先级，允许同时处理多个优先级
-2. 更新优先级继承自**触发它的事件优先级**
+1. `priorityLevel` 
 
-#### 任务优先级
+   根据优先级进行堆排序。
 
-> 渲染任务的排序依据 → **Fiber 树协调**
+2. `expirationTime` 
 
-1. 获取当前最高优先级的更新车道
-2. Lane 转换为 Scheduler 优先级
+   **饥饿任务处理**
 
-#### 调度优先级
+   低优先级任务
 
+   配合startTime。
 
-
-
+3. `callback` + `next` → **任务中断恢复**
 
 
 
-## React的流程与机制
+## * React的流程与机制
 
 ### 1 请讲述下 render阶段
 
 > 进入 performUnitWork时
 
-#### beginWork
+#### 01 beginWork
 
 > 1. 将会从从rootFiber开始向下深度优先遍历，
 >
@@ -1005,31 +1110,31 @@ const [ isPendging, startTransition ] = useTransition();
 >
 > 递阶段是从根节点开始，向下遍历Fiber树
 
-1. mount
+1. 计算组件最新状态（`useState` 值）
 
-   - 根据jsx上的tag属性不同创建不同的fiber节点
-   - mount时刻第一次挂载才会触发的。
+   renderWithHook
 
-2. update
+   调用fiber.memoizedState的queue 来计算最新的状态值。 以达到最终的fiber树。
 
-   - 复用前一次更新的子Fiber
-   - 新建workInProgress.child (新建子Fiber)
+2. 生成子组件的 ReactElement
 
-3. diff算法
+3. 通过 Diff 算法构建/更新子 Fiber 节点
+
+4. diff算法
 
    当考虑服用时刻即会使用react的diff算法的逻辑
 
-#### completeWork
+#### 02 completeWork
 
 > 1. 从叶子节点开始，向上回溯到根节点
 > 2. 虽然他也是需要区分update与mount的，但我们不应该只是片面的从这两个方面考虑
 
-1. **DOM 准备**
+1. 创建与更新DOM节点
 
    - mount挂载DOM （Fiber.stateNode 的属性）
-   - update比较新旧的属性，来计算出更新的属性。
+   - update比较新旧的属性，来计算出更新的属性
 
-2. **构建副作用链表（effectTag）** 
+2. **构建副作用链表（标记effectTag）** 
 
    在此阶段，会检查每个Fiber节点会检查自己是否有副作用（即我们在beginWork上的行为）。
 
@@ -1125,3 +1230,27 @@ const [ isPendging, startTransition ] = useTransition();
    - 设置新的 ref
    -  切换当前 Fiber 树:root.current = finishedWork;
 
+### 4 onClick合成事件里面触发了setState方法
+
+1. 事件触发
+
+   - 触发onClick，设置对应的 【事件优先级】
+   - 进入批处理流程（隶属合成事件）
+
+2. 执行事件。
+
+   创建对应的**创建更新对象**， 以形成环形链表。
+
+   挂载至当前的 fiber.updateQueue.pending。
+
+3. 延迟调度
+
+   （beginWork）
+
+4. 空闲执行更新事件。
+
+5. **更新对象处理**发生在**beginWork阶段**
+
+   开始更新状态。
+
+   然后就是正常的react的流程了。

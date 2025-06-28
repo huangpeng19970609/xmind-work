@@ -225,8 +225,6 @@
 
 ### 03 说下`hooks`的状态
 
-
-
 #### 01 举一个useState的例子
 
 1. 每一个组件实例都对应着一个Fiber， Fiber存在 memoizedState 存储hook， 以单向链表形态存储。
@@ -663,10 +661,6 @@ useState` 本质是预定义 reducer 的 `useReducer
 
 
 
-### 06 React concurrency 并发机制
-
-
-
 ### 为何 React Hooks 不能放在条件或循环之内？
 
 > 要求 Hooks 在顶层调用实质是强制保证
@@ -1080,7 +1074,7 @@ type Task = {
 
 1. `priorityLevel` 
 
-   根据优先级进行堆排序。
+   根据优先级进行【堆排序】。
 
 2. `expirationTime` 
 
@@ -1100,7 +1094,7 @@ type Task = {
 
 > 进入 performUnitWork时
 
-#### 01 beginWork
+#### 01 beginWork（fiber）
 
 > 1. 将会从从rootFiber开始向下深度优先遍历，
 >
@@ -1116,15 +1110,13 @@ type Task = {
 
    调用fiber.memoizedState的queue 来计算最新的状态值。 以达到最终的fiber树。
 
-2. 生成子组件的 ReactElement
-
 3. 通过 Diff 算法构建/更新子 Fiber 节点
 
 4. diff算法
 
    当考虑服用时刻即会使用react的diff算法的逻辑
 
-#### 02 completeWork
+#### 02 completeWork（dom）
 
 > 1. 从叶子节点开始，向上回溯到根节点
 > 2. 虽然他也是需要区分update与mount的，但我们不应该只是片面的从这两个方面考虑
@@ -1171,22 +1163,22 @@ type Task = {
       - 都没有结束
         1. **构建 Key 到 Fiber 的映射表**
         2. 再次遍历剩下的新的children
-        3. 若旧节点化，则标记移动
+        3. 若旧节点，则标记移动
         4. 否则为update。
         5. 否则为删除
 
-### 3 讲述下commit阶段
+### 3 讲述下commit阶段 
 
-1. beforeMutation
+1. beforeMutation （dom环境的准备前）
 
    - 销毁ref， 销毁对应的foucus、blur逻辑
-   - （⭐）调度useEffect 
+   - （⭐）调度 useEffect 
      - 标记： PASSIVE
      - 收集
      - 安排
    - 触发 getSnapShotBeforeUpdate （提供componentDidUpdate使用）
 
-2. mutation
+2. mutation （唯一的操作dom的机会）
 
    - 遍历effectList （处理节点和副作用）
 
